@@ -35,22 +35,9 @@ func main() {
 	}
 	defer conn.Close()
 
-	// net.Conn -> pty
-
-	// Read network
+	// read network -> write pty
 	go func() {
 		for {
-			// b := make([]byte, 64)
-			// _, err := conn.Read(b)
-			// if err != nil && err != io.EOF {
-			// 	log.Printf("error: failed to read conn : %v\n", err)
-			// 	continue
-			// }
-			// if err != io.EOF {
-			// 	log.Printf("error: got io.EOF: %v\n", err)
-			// 	return
-			// }
-
 			n, err := io.Copy(pt, conn)
 			if err != nil || n == 0 {
 				log.Printf("error: io.Copy(pt,conn) charachers:%v, %v\n", n, err)
@@ -61,7 +48,7 @@ func main() {
 		}
 	}()
 
-	// Read pty
+	// read pty -> write network
 	for {
 		buf := make([]byte, 0, 64)
 
