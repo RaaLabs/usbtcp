@@ -15,12 +15,12 @@ import (
 )
 
 type netConfig struct {
-	listenIPPort string
-
 	mtls   bool
 	caCert string
 	cert   string
 	key    string
+
+	ipPort string
 }
 
 // newTLSConfig Will load all PEM encoded certificate from their file paths,
@@ -57,7 +57,7 @@ func getNetConn(nConf netConfig) (net.Conn, error) {
 
 	switch nConf.mtls {
 	case false:
-		conn, err = net.Dial("tcp", nConf.listenIPPort)
+		conn, err = net.Dial("tcp", nConf.ipPort)
 		if err != nil {
 			return nil, fmt.Errorf("error: failed to connect : %v", err)
 		}
@@ -68,7 +68,7 @@ func getNetConn(nConf netConfig) (net.Conn, error) {
 			return nil, fmt.Errorf("error: failed to create TLS config : %v", err)
 		}
 
-		conn, err = tls.Dial("tcp", nConf.listenIPPort, cfg)
+		conn, err = tls.Dial("tcp", nConf.ipPort, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("error: failed to connect : %v", err)
 		}
@@ -83,14 +83,15 @@ func main() {
 	caCert := flag.String("caCert", "../certs/ca-cert.pem", "the path to the ca certificate. There is a helper script 'gencert.sh' who will generate self signed certificates if you don't have other certificates to use")
 	cert := flag.String("cert", "../certs/client-cert.pem", "the path to the server certificate")
 	key := flag.String("key", "../certs/client-key.pem", "the path to the private key")
+	ipPort := flag.String("ipPort", "127.0.0.1:45000", "ip:port of the host to connec to")
 	flag.Parse()
 
 	nConf := netConfig{
-		listenIPPort: "127.0.0.1:45000",
-		mtls:         *mtls,
-		caCert:       *caCert,
-		cert:         *cert,
-		key:          *key,
+		mtls:   *mtls,
+		caCert: *caCert,
+		cert:   *cert,
+		key:    *key,
+		ipPort: *ipPort,
 	}
 
 	// --- Client: Open pty

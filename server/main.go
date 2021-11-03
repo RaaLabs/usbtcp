@@ -15,12 +15,13 @@ import (
 )
 
 type netConfig struct {
-	listenIPPort string
-
 	mtls   bool
 	caCert string
 	cert   string
 	key    string
+
+	baud   int
+	ipPort string
 }
 
 // getTTY will get the path of the tty.
@@ -141,7 +142,7 @@ func getNetListener(nConf netConfig) (net.Listener, error) {
 			ClientAuth:   tls.RequireAndVerifyClientCert,
 		}
 
-		nl, err := tls.Listen("tcp", nConf.listenIPPort, config)
+		nl, err := tls.Listen("tcp", nConf.ipPort, config)
 		if err != nil {
 			return nil, fmt.Errorf("error: failed to start server listener: %v", err)
 		}
@@ -151,7 +152,7 @@ func getNetListener(nConf netConfig) (net.Listener, error) {
 		return nl, nil
 
 	case false:
-		nl, err := net.Listen("tcp", nConf.listenIPPort)
+		nl, err := net.Listen("tcp", nConf.ipPort)
 		if err != nil {
 			return nl, fmt.Errorf("error: opening network listener failed: %v", err)
 		}
@@ -169,14 +170,18 @@ func main() {
 	caCert := flag.String("caCert", "../certs/ca-cert.pem", "the path to the ca certificate. There is a helper script 'gencert.sh' who will generate self signed certificates if you don't have other certificates to use")
 	cert := flag.String("cert", "../certs/server-cert.pem", "the path to the server certificate")
 	key := flag.String("key", "../certs/server-key.pem", "the path to the private key")
+	baud := flag.Int("baud", 9600, "baud rate")
+	ipPort := flag.String("ipPort", "127.0.0.1:45000", "ip:port for where to start the network listener")
+
 	flag.Parse()
 
 	nConf := netConfig{
-		listenIPPort: "127.0.0.1:45000",
-		mtls:         *mtls,
-		caCert:       *caCert,
-		cert:         *cert,
-		key:          *key,
+		mtls:   *mtls,
+		caCert: *caCert,
+		cert:   *cert,
+		key:    *key,
+		baud:   *baud,
+		ipPort: *ipPort,
 	}
 
 	ttyName, err := getTTY(*vid, *pid)
