@@ -23,36 +23,6 @@ type netConfig struct {
 	key    string
 }
 
-func main() {
-	vid := flag.String("vid", "", "usb VID")
-	pid := flag.String("pid", "", "usb PID")
-	mtls := flag.Bool("mtls", false, "set to true to enable, and also set caCert and cert flags")
-	caCert := flag.String("caCert", "../certs/ca-cert.pem", "the path to the ca certificate. There is a helper script 'gencert.sh' who will generate self signed certificates if you don't have other certificates to use")
-	cert := flag.String("cert", "../certs/server-cert.pem", "the path to the server certificate")
-	key := flag.String("key", "../certs/server-key.pem", "the path to the private key")
-	flag.Parse()
-
-	nConf := netConfig{
-		listenIPPort: "127.0.0.1:45000",
-		mtls:         *mtls,
-		caCert:       *caCert,
-		cert:         *cert,
-		key:          *key,
-	}
-
-	ttyName, err := getTTY(*vid, *pid)
-	if err != nil {
-		log.Printf("%v\n", err)
-		return
-	}
-	fmt.Printf("info: found port: %v\n", ttyName)
-
-	err = relay(ttyName, nConf)
-	if err != nil {
-		log.Printf("%v\n", err)
-	}
-}
-
 // getTTY will get the path of the tty.
 func getTTY(vid string, pid string) (string, error) {
 	ports, err := enumerator.GetDetailedPortsList()
@@ -114,16 +84,11 @@ func relay(ttyName string, nConf netConfig) error {
 					return
 				}
 
-				// fmt.Printf(" * reading tty string: %v, characters: %v\n", string(b), n)
-
 				_, err = conn.Write(b)
 				if err != nil {
 					log.Printf("error: pt.Write: %v\n", err)
 					return
 				}
-
-				//fmt.Printf("wrote to conn: %v\n", string(b))
-
 			}
 		}()
 
@@ -140,19 +105,16 @@ func relay(ttyName string, nConf netConfig) error {
 				return fmt.Errorf("error: pt.Read, got io.EOF: %v", err)
 			}
 
-			// fmt.Printf(" * reading conn string: %v, characters: %v\n", string(b), n)
-
 			_, err = tty.Write(b)
 			if err != nil {
 				return fmt.Errorf("error: fh.Write : %v", err)
 			}
-
-			// fmt.Printf("wrote %v charachters to fh: %s\n", n, b)
 		}
 
 	}
 }
 
+// getNetListener will return either an normal or TLS encryptet net.Listener.
 func getNetListener(nConf netConfig) (net.Listener, error) {
 	switch nConf.mtls {
 	case true:
@@ -198,4 +160,34 @@ func getNetListener(nConf netConfig) (net.Listener, error) {
 	}
 
 	return nil, fmt.Errorf("error: opening network listener failed: unable to get state of mtls flag")
+}
+
+func main() {
+	vid := flag.String("vid", "", "usb VID")
+	pid := flag.String("pid", "", "usb PID")
+	mtls := flag.Bool("mtls", false, "set to true to enable, and also set caCert and cert flags")
+	caCert := flag.String("caCert", "../certs/ca-cert.pem", "the path to the ca certificate. There is a helper script 'gencert.sh' who will generate self signed certificates if you don't have other certificates to use")
+	cert := flag.String("cert", "../certs/server-cert.pem", "the path to the server certificate")
+	key := flag.String("key", "../certs/server-key.pem", "the path to the private key")
+	flag.Parse()
+
+	nConf := netConfig{
+		listenIPPort: "127.0.0.1:45000",
+		mtls:         *mtls,
+		caCert:       *caCert,
+		cert:         *cert,
+		key:          *key,
+	}
+
+	ttyName, err := getTTY(*vid, *pid)
+	if err != nil {
+		log.Printf("%v\n", err)
+		return
+	}
+	log.Printf("info: found port: %v\n", ttyName)
+
+	err = relay(ttyName, nConf)
+	if err != nil {
+		log.Printf("%v\n", err)
+	}
 }

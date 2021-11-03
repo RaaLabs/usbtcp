@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"os"
 
 	"github.com/creack/pty"
 )
@@ -49,6 +50,33 @@ func newTLSConfig(nc netConfig) (*tls.Config, error) {
 	return &config, nil
 }
 
+// getNetConn will return either a normal or TLS encryptet net.Conn.
+func getNetConn(nConf netConfig) (net.Conn, error) {
+	var conn net.Conn
+	var err error
+
+	switch nConf.mtls {
+	case false:
+		conn, err = net.Dial("tcp", nConf.listenIPPort)
+		if err != nil {
+			return nil, fmt.Errorf("error: failed to connect : %v", err)
+		}
+
+	case true:
+		cfg, err := newTLSConfig(nConf)
+		if err != nil {
+			return nil, fmt.Errorf("error: failed to create TLS config : %v", err)
+		}
+
+		conn, err = tls.Dial("tcp", nConf.listenIPPort, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("error: failed to connect : %v", err)
+		}
+	}
+
+	return conn, nil
+}
+
 func main() {
 	// addCR := flag.Bool("addCR", false, "set to true to add CR to the end of byte buffer when CR is pressed")
 	mtls := flag.Bool("mtls", false, "set to true to enable, and also set caCert and cert flags")
@@ -74,35 +102,16 @@ func main() {
 	defer pt.Close()
 	defer tt.Close()
 
-	fmt.Printf("pty: %v\n", pt.Name())
-	fmt.Printf("tty: %v\n", tt.Name())
+	log.Printf("pty: %v\n", pt.Name())
+	log.Printf("tty: %v\n", tt.Name())
 
 	// --- Client: Open dial network
 
-	var conn net.Conn
-
-	switch nConf.mtls {
-	case false:
-		conn, err = net.Dial("tcp", nConf.listenIPPort)
-		if err != nil {
-			log.Printf("error: failed to connect : %v\n", err)
-			return
-		}
-
-	case true:
-		cfg, err := newTLSConfig(nConf)
-		if err != nil {
-			log.Printf("error: failed to create TLS config : %v\n", err)
-			return
-		}
-
-		conn, err = tls.Dial("tcp", nConf.listenIPPort, cfg)
-		if err != nil {
-			log.Printf("error: failed to connect : %v\n", err)
-			return
-		}
+	conn, err := getNetConn(nConf)
+	if err != nil {
+		log.Printf("%v\n", err)
+		return
 	}
-
 	defer conn.Close()
 
 	if conn == nil {
@@ -115,9 +124,13 @@ func main() {
 		for {
 			b := make([]byte, 1)
 			n, err := conn.Read(b)
-			if err != nil || n == 0 {
-				log.Printf("error: conn.Read: characters=%v, %v\n", n, err)
-				return
+			if err != nil && err != io.EOF {
+				log.Printf("error: conn.Read err != nil || err != io.EOF: characters=%v, %v\n", n, err)
+				continue
+			}
+			if err == io.EOF && n == 0 {
+				log.Printf("error: conn.Read err == io.EOF && n == 0: characters=%v, %v\n", n, err)
+				os.Exit(1)
 			}
 
 			{
@@ -127,36 +140,28 @@ func main() {
 					return
 				}
 			}
-
-			fmt.Println(" * net -> pt :n=", n)
 		}
 	}()
 
 	// read pty -> write network
 
-	// --------- HERE ----------
-
 	for {
 		b := make([]byte, 1)
-		_, err := pt.Read(b)
+		n, err := pt.Read(b)
 		if err != nil && err != io.EOF {
 			log.Printf("error: failed to read pt : %v\n", err)
 			continue
 		}
-		if err == io.EOF {
+		if err == io.EOF && n == 0 {
 			log.Printf("error: pt.Read, got io.EOF: %v\n", err)
 			return
 		}
 
-		// fmt.Printf(" * got: %v\n", b)
-
-		n, err := conn.Write(b)
+		_, err = conn.Write(b)
 		if err != nil {
 			log.Printf("error: fh.Write : %v\n", err)
 			return
 		}
-
-		fmt.Printf("wrote %v charachters to pty\n", n)
 
 	}
 
