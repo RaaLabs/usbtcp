@@ -50,7 +50,7 @@ func newTLSConfig(nc netConfig) (*tls.Config, error) {
 }
 
 func main() {
-	addCR := flag.Bool("addCR", false, "set to true to add CR to the end of byte buffer when CR is pressed")
+	// addCR := flag.Bool("addCR", false, "set to true to add CR to the end of byte buffer when CR is pressed")
 	mtls := flag.Bool("mtls", false, "set to true to enable, and also set caCert and cert flags")
 	caCert := flag.String("caCert", "../certs/ca-cert.pem", "the path to the ca certificate. There is a helper script 'gencert.sh' who will generate self signed certificates if you don't have other certificates to use")
 	cert := flag.String("cert", "../certs/client-cert.pem", "the path to the server certificate")
@@ -113,52 +113,51 @@ func main() {
 	// read network -> write pty
 	go func() {
 		for {
-			n, err := io.Copy(pt, conn)
+			b := make([]byte, 1)
+			n, err := conn.Read(b)
 			if err != nil || n == 0 {
-				log.Printf("error: io.Copy(pt,conn) charachers:%v, %v\n", n, err)
+				log.Printf("error: conn.Read: characters=%v, %v\n", n, err)
 				return
 			}
-			fmt.Printf(" * io.Copy(pt,conn) copied %v number of bytes\n", n)
 
+			{
+				n, err := pt.Write(b)
+				if err != nil || n == 0 {
+					log.Printf("error: pt.Write: characters=%v, %v\n", n, err)
+					return
+				}
+			}
+
+			fmt.Println(" * net -> pt :n=", n)
 		}
 	}()
 
 	// read pty -> write network
+
+	// --------- HERE ----------
+
 	for {
-		buf := make([]byte, 0, 64)
-
-		for {
-			b := make([]byte, 1)
-			_, err := pt.Read(b)
-			if err != nil && err != io.EOF {
-				log.Printf("error: failed to read pt : %v\n", err)
-				continue
-			}
-			if err == io.EOF {
-				log.Printf("error: pt.Read, got io.EOF: %v\n", err)
-				return
-			}
-
-			// fmt.Printf(" * got: %v\n", b)
-
-			if b[0] == 13 {
-				break
-			}
-
-			buf = append(buf, b...)
-
+		b := make([]byte, 1)
+		_, err := pt.Read(b)
+		if err != nil && err != io.EOF {
+			log.Printf("error: failed to read pt : %v\n", err)
+			continue
+		}
+		if err == io.EOF {
+			log.Printf("error: pt.Read, got io.EOF: %v\n", err)
+			return
 		}
 
-		if *addCR {
-			buf = append(buf, []byte("\r")...)
-		}
+		// fmt.Printf(" * got: %v\n", b)
 
-		n, err := conn.Write(buf)
+		n, err := conn.Write(b)
 		if err != nil {
 			log.Printf("error: fh.Write : %v\n", err)
 			return
 		}
 
 		fmt.Printf("wrote %v charachters to pty\n", n)
+
 	}
+
 }

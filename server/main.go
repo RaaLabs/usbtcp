@@ -107,7 +107,7 @@ func relay(ttyName string, nConf netConfig) error {
 		// Read tty -> write net.Conn
 		go func() {
 			for {
-				b := make([]byte, 64)
+				b := make([]byte, 1)
 				_, err := tty.Read(b)
 				if err != nil && err != io.EOF {
 					log.Printf("error: fh, failed to read : %v\n", err)
