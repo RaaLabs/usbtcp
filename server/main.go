@@ -6,9 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
+	"os"
 
 	"github.com/pkg/term"
 	"go.bug.st/serial/enumerator"
@@ -127,7 +127,7 @@ func getNetListener(nConf netConfig) (net.Listener, error) {
 		}
 
 		certPool := x509.NewCertPool()
-		pemCABytes, err := ioutil.ReadFile(nConf.caCert)
+		pemCABytes, err := os.ReadFile(nConf.caCert)
 		if err != nil {
 			return nil, fmt.Errorf("error: failed to read ca cert: %v", err)
 		}
