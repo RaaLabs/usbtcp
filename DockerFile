@@ -1,0 +1,37 @@
+# build stage
+FROM golang:1.19.1-alpine AS build-env
+RUN apk --no-cache add build-base git gcc
+
+RUN mkdir -p /build
+COPY ./ /build/
+
+WORKDIR /build/client/
+RUN go version
+#RUN git checkout main && go build -o steward
+RUN go build -o usbtcpclient
+RUN pwd
+RUN ls -l
+
+# final stage
+FROM alpine
+
+RUN apk update && apk add curl
+
+WORKDIR /app
+COPY --from=build-env /build/client/usbtcpclient /app/
+
+# If MTLS is enabled, give the path to the CA cert
+ENV CA_CERT ""
+# 127.0.0.1:45000
+ENV IP_PORT ""
+# If MTLS is enabled, give the path to the key
+ENV KEY ""
+# Set to 1 to enable MTLS
+ENV MTLS ""
+
+CMD ["ash","-c","/app/usbtcpclient\
+    -caCert=$CA_CERT\
+    -ipPort=$IP_PORT\
+    -key=$KEY\
+    -mtls=$MTLS\
+    "]
