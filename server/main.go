@@ -81,13 +81,13 @@ func relay(ttyName string, nConf netConfig) error {
 				b := make([]byte, 1)
 				_, err := tty.Read(b)
 				if err != nil && err != io.EOF {
-					log.Printf("error: fh, failed to read : %v\n", err)
+					log.Printf("error: tty.Read failed : %v\n", err)
 					return
 				}
 
 				_, err = conn.Write(b)
 				if err != nil {
-					log.Printf("error: pt.Write: %v\n", err)
+					log.Printf("error: conn.Write failed: %v\n", err)
 					return
 				}
 			}
@@ -99,16 +99,17 @@ func relay(ttyName string, nConf netConfig) error {
 
 			_, err := conn.Read(b)
 			if err != nil && err != io.EOF {
-				log.Printf("error: failed to read pt : %v\n", err)
+				log.Printf("error: conn.Read failed : %v\n", err)
 				continue
 			}
 			if err == io.EOF {
-				return fmt.Errorf("error: pt.Read, got io.EOF: %v", err)
+				log.Printf("error: conn.Read failed, got io.EOF: %v", err)
+				break
 			}
 
 			_, err = tty.Write(b)
 			if err != nil {
-				return fmt.Errorf("error: fh.Write : %v", err)
+				return fmt.Errorf("error: tty.Write failed : %v", err)
 			}
 		}
 
