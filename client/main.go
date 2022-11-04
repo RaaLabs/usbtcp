@@ -106,6 +106,19 @@ func main() {
 	log.Printf("pty: %v\n", pt.Name())
 	log.Printf("tty: %v\n", tt.Name())
 
+	fh, err := os.Create("port.info")
+	if err != nil {
+		log.Printf("error: os.Create failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer fh.Close()
+
+	_, err = fh.Write([]byte(tt.Name()))
+	if err != nil {
+		log.Printf("error: writing to file failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	// --- Client: Open dial network
 
 	conn, err := getNetConn(nConf)
@@ -129,14 +142,19 @@ func main() {
 				log.Printf("error: conn.Read err != nil || err != io.EOF: characters=%v, %v\n", n, err)
 				continue
 			}
+			fmt.Printf(" ** read new conn value: %v, string: %v\n", b, string(b))
+
 			if err == io.EOF && n == 0 {
 				log.Printf("error: conn.Read err == io.EOF && n == 0: characters=%v, %v\n", n, err)
 				os.Exit(1)
 			}
 
+			fmt.Printf(" ** reading value from network: %v, string: %v\n", b, string(b))
+
 			{
 				n, err := pt.Write(b)
-				if err != nil || n == 0 {
+				//if err != nil || n == 0 {
+				if err != nil {
 					log.Printf("error: pt.Write: characters=%v, %v\n", n, err)
 					return
 				}
