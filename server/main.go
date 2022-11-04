@@ -49,6 +49,11 @@ func getTTY(vid string, pid string) (string, error) {
 // relay will start relaying the data between the TTY and the network connection.
 func relay(ttyName string, nConf netConfig) error {
 
+	// The for loop will initiate both the network listener and the TTY.
+	// If the connection is dropped for either network or tty, then all
+	// connection both to the TTY and the Network is closed, and all go
+	// routines for reading and writing are exited, and new connection
+	// are made for the next iteration.
 	for {
 		err := func() error {
 
@@ -93,16 +98,16 @@ func relay(ttyName string, nConf netConfig) error {
 
 				// Read tty -> write net.Conn
 				go func() {
-					fmt.Printf(" * starting go routine for Read tty -> write net.Conn\n")
-					defer fmt.Printf(" ** ending go routine for Read tty -> write net.Conn\n")
+					log.Printf(" * starting go routine for Read tty -> write net.Conn\n")
+					defer log.Printf(" ** ending go routine for Read tty -> write net.Conn\n")
 
 					for {
 
 						b := make([]byte, 1)
-						n, err := tty.Read(b)
+						_, err := tty.Read(b)
 						if err != nil {
 							if connOK {
-								fmt.Printf("connOK = %v\n", connOK)
+								// fmt.Printf("connOK = %v\n", connOK)
 								continue
 							}
 
@@ -110,13 +115,13 @@ func relay(ttyName string, nConf netConfig) error {
 							select {
 							case errCh <- er:
 							default:
-								fmt.Printf("%v\n", er)
+								log.Printf("connection marked as down, exiting reader for TTY: %v\n", er)
 							}
 
 							return
 						}
 
-						fmt.Printf(" tty read nr = %v\n", n)
+						// fmt.Printf(" tty read nr = %v\n", n)
 
 						_, err = conn.Write(b)
 						if err != nil {
@@ -128,8 +133,8 @@ func relay(ttyName string, nConf netConfig) error {
 
 				// Read net.Conn -> write tty
 				go func() {
-					fmt.Printf(" * starting go routine for Read net.Conn -> write tty\n")
-					defer fmt.Printf(" ** ending go routine for Read net.Conn -> write tty\n")
+					log.Printf(" * starting go routine for Read net.Conn -> write tty\n")
+					defer log.Printf(" ** ending go routine for Read net.Conn -> write tty\n")
 					defer func() { connOK = false }()
 
 					for {
@@ -151,7 +156,7 @@ func relay(ttyName string, nConf netConfig) error {
 							select {
 							case errCh <- er:
 							default:
-								fmt.Printf("%v\n", er)
+								log.Printf("%v\n", er)
 							}
 							return
 						}
