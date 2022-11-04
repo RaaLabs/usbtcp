@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/creack/pty"
 )
@@ -84,6 +85,8 @@ func main() {
 	cert := flag.String("cert", "../certs/client-cert.pem", "the path to the server certificate")
 	key := flag.String("key", "../certs/client-key.pem", "the path to the private key")
 	ipPort := flag.String("ipPort", "127.0.0.1:45000", "ip:port of the host to connec to")
+	portInfoFileDir := flag.String("portInfoFileDir", "./", "the directory path of where to store the port.info file")
+
 	flag.Parse()
 
 	nConf := netConfig{
@@ -106,7 +109,8 @@ func main() {
 	log.Printf("pty: %v\n", pt.Name())
 	log.Printf("tty: %v\n", tt.Name())
 
-	fh, err := os.Create("port.info")
+	portInfoPath := filepath.Join(*portInfoFileDir, "port.info")
+	fh, err := os.Create(portInfoPath)
 	if err != nil {
 		log.Printf("error: os.Create failed: %v\n", err)
 		os.Exit(1)
