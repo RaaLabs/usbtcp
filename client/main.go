@@ -146,14 +146,11 @@ func main() {
 				log.Printf("error: conn.Read err != nil || err != io.EOF: characters=%v, %v\n", n, err)
 				continue
 			}
-			fmt.Printf(" ** read new conn value: %v, string: %v\n", b, string(b))
 
 			if err == io.EOF && n == 0 {
 				log.Printf("error: conn.Read err == io.EOF && n == 0: characters=%v, %v\n", n, err)
 				os.Exit(1)
 			}
-
-			fmt.Printf(" ** reading value from network: %v, string: %v\n", b, string(b))
 
 			{
 				n, err := pt.Write(b)
