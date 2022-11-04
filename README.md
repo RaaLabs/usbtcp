@@ -87,7 +87,7 @@ or with mTLS
     usb PID
   -vid string
     usb VID
-````
+```
 
 ### Client
 
