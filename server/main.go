@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/pkg/term"
 	"go.bug.st/serial/enumerator"
@@ -46,74 +47,142 @@ func getTTY(vid string, pid string) (string, error) {
 
 // relay will start relaying the data between the TTY and the network connection.
 func relay(ttyName string, nConf netConfig) error {
-	// --- Server: Open tty
-
-	tty, err := term.Open(ttyName)
-
-	if err != nil {
-		log.Printf("error: tty OpenFile: %v\n", err)
-	}
-	defer tty.Close()
-	defer tty.Restore()
-	term.RawMode(tty)
-
-	err = tty.SetSpeed(9600)
-	if err != nil {
-		return fmt.Errorf("error: failed to set baud: %v", err)
-	}
-
-	nl, err := getNetListener(nConf)
-	if err != nil {
-		return fmt.Errorf("error: opening network listener failed: %v", err)
-	}
-	defer nl.Close()
 
 	for {
-		conn, err := nl.Accept()
-		if err != nil {
-			log.Printf("error: opening out endpoint failed: %v\n", err)
-			continue
-		}
+		err := func() error {
 
-		// Read tty -> write net.Conn
-		go func() {
+			// --- Server: Open tty
+
+			tty, err := term.Open(ttyName)
+
+			if err != nil {
+				log.Printf("error: tty OpenFile: %v\n", err)
+			}
+			defer tty.Close()
+			defer tty.Restore()
+			term.RawMode(tty)
+
+			err = tty.SetSpeed(9600)
+			if err != nil {
+				return fmt.Errorf("error: failed to set baud: %v", err)
+			}
+
+			nl, err := getNetListener(nConf)
+			if err != nil {
+				return fmt.Errorf("error: opening network listener failed: %v", err)
+			}
+			defer nl.Close()
+
 			for {
-				b := make([]byte, 1)
-				_, err := tty.Read(b)
-				if err != nil && err != io.EOF {
-					log.Printf("error: tty.Read failed : %v\n", err)
-					return
+
+				err := tty.SetReadTimeout(time.Second * 1)
+				if err != nil {
+					return fmt.Errorf("error: setReadTimeoutFailed: %v", err)
 				}
 
-				_, err = conn.Write(b)
+				conn, err := nl.Accept()
 				if err != nil {
-					log.Printf("error: conn.Write failed: %v\n", err)
-					return
+					log.Printf("error: opening out endpoint failed: %v\n", err)
+					continue
 				}
+
+				connOK := true
+
+				errCh := make(chan error)
+
+				// Read tty -> write net.Conn
+				go func() {
+					fmt.Printf(" * starting go routine for Read tty -> write net.Conn\n")
+					defer fmt.Printf(" ** ending go routine for Read tty -> write net.Conn\n")
+
+					for {
+						fmt.Println(" *** DEBUG tty->conn 1")
+
+						b := make([]byte, 1)
+						n, err := tty.Read(b)
+						if err != nil {
+							fmt.Println(" *** DEBUG tty->conn 1.1")
+							if connOK {
+								fmt.Printf("connOK = %v\n", connOK)
+								continue
+							}
+							fmt.Println(" *** DEBUG tty->conn 1.2")
+							er := fmt.Errorf("error: tty.Read failed: %v", err)
+							select {
+							case errCh <- er:
+							default:
+								fmt.Printf("%v\n", er)
+							}
+
+							fmt.Println(" *** DEBUG tty->conn 1.3")
+							return
+						}
+
+						fmt.Printf(" tty read nr = %v\n", n)
+
+						fmt.Println(" *** DEBUG tty->conn 2")
+
+						_, err = conn.Write(b)
+						if err != nil {
+							errCh <- fmt.Errorf("error: conn.Write failed: %v", err)
+							return
+						}
+						fmt.Println(" *** DEBUG tty->conn 3")
+					}
+				}()
+
+				// Read net.Conn -> write tty
+				go func() {
+					fmt.Printf(" * starting go routine for Read net.Conn -> write tty\n")
+					defer fmt.Printf(" ** ending go routine for Read net.Conn -> write tty\n")
+					defer func() { connOK = false }()
+
+					for {
+						b := make([]byte, 1)
+
+						fmt.Println(" *** DEBUG conn->tty 1")
+						_, err := conn.Read(b)
+						if err != nil && err != io.EOF {
+							fmt.Println(" *** DEBUG conn->tty 1.1")
+							errCh <- fmt.Errorf("error: conn.Read failed : %v", err)
+							return
+						}
+						if err == io.EOF {
+							fmt.Println(" *** DEBUG conn->tty 1.2")
+
+							errCh <- fmt.Errorf("error: conn.Read failed, got io.EOF: %v", err)
+							return
+						}
+
+						fmt.Println(" *** DEBUG conn->tty 2")
+						_, err = tty.Write(b)
+						if err != nil {
+							er := fmt.Errorf("error: tty.Write failed : %v", err)
+							select {
+							case errCh <- er:
+							default:
+								fmt.Printf("%v\n", er)
+							}
+							return
+						}
+					}
+				}()
+
+				err = <-errCh
+				if err != nil {
+					log.Printf("%v\n", err)
+				}
+				tty.Close()
+				conn.Close()
+
 			}
 		}()
 
-		// Read net.Conn -> write tty
-		for {
-			b := make([]byte, 1)
-
-			_, err := conn.Read(b)
-			if err != nil && err != io.EOF {
-				log.Printf("error: conn.Read failed : %v\n", err)
-				continue
-			}
-			if err == io.EOF {
-				log.Printf("error: conn.Read failed, got io.EOF: %v", err)
-				break
-			}
-
-			_, err = tty.Write(b)
-			if err != nil {
-				return fmt.Errorf("error: tty.Write failed : %v", err)
-			}
+		if err != nil {
+			log.Printf("%v\n", err)
 		}
-
 	}
+
 }
 
 // getNetListener will return either an normal or TLS encryptet net.Listener.
