@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -33,7 +32,7 @@ func newTLSConfig(nc netConfig) (*tls.Config, error) {
 	}
 
 	certPool := x509.NewCertPool()
-	pemCABytes, err := ioutil.ReadFile(nc.caCert)
+	pemCABytes, err := os.ReadFile(nc.caCert)
 	if err != nil {
 		return nil, fmt.Errorf("error: failed to read ca cert: %v", err)
 	}
