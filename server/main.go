@@ -6,9 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
+	"os"
+	"time"
 
 	"github.com/pkg/term"
 	"go.bug.st/serial/enumerator"
@@ -20,8 +21,9 @@ type netConfig struct {
 	cert   string
 	key    string
 
-	baud   int
-	ipPort string
+	baud           int
+	ipPort         string
+	ttyReadTimeout int
 }
 
 // getTTY will get the path of the tty.
@@ -46,73 +48,136 @@ func getTTY(vid string, pid string) (string, error) {
 
 // relay will start relaying the data between the TTY and the network connection.
 func relay(ttyName string, nConf netConfig) error {
-	// --- Server: Open tty
 
-	tty, err := term.Open(ttyName)
-
-	if err != nil {
-		log.Printf("error: tty OpenFile: %v\n", err)
-	}
-	defer tty.Close()
-	defer tty.Restore()
-	term.RawMode(tty)
-
-	err = tty.SetSpeed(9600)
-	if err != nil {
-		return fmt.Errorf("error: failed to set baud: %v", err)
-	}
-
-	nl, err := getNetListener(nConf)
-	if err != nil {
-		return fmt.Errorf("error: opening network listener failed: %v", err)
-	}
-	defer nl.Close()
-
+	// The for loop will initiate both the network listener and the TTY.
+	// If the connection is dropped for either network or tty, then all
+	// connection both to the TTY and the Network is closed, and all go
+	// routines for reading and writing are exited, and new connection
+	// are made for the next iteration.
 	for {
-		conn, err := nl.Accept()
-		if err != nil {
-			log.Printf("error: opening out endpoint failed: %v\n", err)
-			continue
-		}
+		err := func() error {
 
-		// Read tty -> write net.Conn
-		go func() {
+			// --- Server: Open tty
+
+			tty, err := term.Open(ttyName)
+
+			if err != nil {
+				log.Printf("error: tty OpenFile: %v\n", err)
+			}
+			defer tty.Close()
+			defer tty.Restore()
+			term.RawMode(tty)
+
+			err = tty.SetSpeed(9600)
+			if err != nil {
+				return fmt.Errorf("error: failed to set baud: %v", err)
+			}
+
+			nl, err := getNetListener(nConf)
+			if err != nil {
+				return fmt.Errorf("error: opening network listener failed: %v", err)
+			}
+			defer nl.Close()
+
 			for {
-				b := make([]byte, 1)
-				_, err := tty.Read(b)
-				if err != nil && err != io.EOF {
-					log.Printf("error: fh, failed to read : %v\n", err)
-					return
+
+				err := tty.SetReadTimeout(time.Second * time.Duration(nConf.ttyReadTimeout))
+				if err != nil {
+					return fmt.Errorf("error: setReadTimeoutFailed: %v", err)
 				}
 
-				_, err = conn.Write(b)
+				conn, err := nl.Accept()
 				if err != nil {
-					log.Printf("error: pt.Write: %v\n", err)
-					return
+					log.Printf("error: opening out endpoint failed: %v\n", err)
+					continue
 				}
+
+				connOK := true
+
+				errCh := make(chan error)
+
+				// Read tty -> write net.Conn
+				go func() {
+					log.Printf(" * starting go routine for Read tty -> write net.Conn\n")
+					defer log.Printf(" ** ending go routine for Read tty -> write net.Conn\n")
+
+					for {
+
+						b := make([]byte, 1)
+						_, err := tty.Read(b)
+						if err != nil {
+							if connOK {
+								// fmt.Printf("connOK = %v\n", connOK)
+								continue
+							}
+
+							er := fmt.Errorf("error: tty.Read failed: %v", err)
+							select {
+							case errCh <- er:
+							default:
+								log.Printf("connection marked as down, exiting reader for TTY: %v\n", er)
+							}
+
+							return
+						}
+
+						// fmt.Printf(" tty read nr = %v\n", n)
+
+						_, err = conn.Write(b)
+						if err != nil {
+							errCh <- fmt.Errorf("error: conn.Write failed: %v", err)
+							return
+						}
+					}
+				}()
+
+				// Read net.Conn -> write tty
+				go func() {
+					log.Printf(" * starting go routine for Read net.Conn -> write tty\n")
+					defer log.Printf(" ** ending go routine for Read net.Conn -> write tty\n")
+					defer func() { connOK = false }()
+
+					for {
+						b := make([]byte, 1)
+
+						_, err := conn.Read(b)
+						if err != nil && err != io.EOF {
+							errCh <- fmt.Errorf("error: conn.Read failed : %v", err)
+							return
+						}
+						if err == io.EOF {
+							errCh <- fmt.Errorf("error: conn.Read failed, got io.EOF: %v", err)
+							return
+						}
+
+						_, err = tty.Write(b)
+						if err != nil {
+							er := fmt.Errorf("error: tty.Write failed : %v", err)
+							select {
+							case errCh <- er:
+							default:
+								log.Printf("%v\n", er)
+							}
+							return
+						}
+					}
+				}()
+
+				err = <-errCh
+				if err != nil {
+					log.Printf("%v\n", err)
+				}
+				tty.Close()
+				conn.Close()
+
 			}
 		}()
 
-		// Read net.Conn -> write tty
-		for {
-			b := make([]byte, 1)
-
-			_, err := conn.Read(b)
-			if err != nil && err != io.EOF {
-				log.Printf("error: failed to read pt : %v\n", err)
-				continue
-			}
-			if err == io.EOF {
-				return fmt.Errorf("error: pt.Read, got io.EOF: %v", err)
-			}
-
-			_, err = tty.Write(b)
-			if err != nil {
-				return fmt.Errorf("error: fh.Write : %v", err)
-			}
+		if err != nil {
+			log.Printf("%v\n", err)
 		}
-
 	}
+
 }
 
 // getNetListener will return either an normal or TLS encryptet net.Listener.
@@ -127,7 +192,7 @@ func getNetListener(nConf netConfig) (net.Listener, error) {
 		}
 
 		certPool := x509.NewCertPool()
-		pemCABytes, err := ioutil.ReadFile(nConf.caCert)
+		pemCABytes, err := os.ReadFile(nConf.caCert)
 		if err != nil {
 			return nil, fmt.Errorf("error: failed to read ca cert: %v", err)
 		}
@@ -172,16 +237,18 @@ func main() {
 	key := flag.String("key", "../certs/server-key.pem", "the path to the private key")
 	baud := flag.Int("baud", 9600, "baud rate")
 	ipPort := flag.String("ipPort", "127.0.0.1:45000", "ip:port for where to start the network listener")
+	ttyReadTimeout := flag.Int("ttyReadTimeout", 1, "The timeout for TTY read given in seconds")
 
 	flag.Parse()
 
 	nConf := netConfig{
-		mtls:   *mtls,
-		caCert: *caCert,
-		cert:   *cert,
-		key:    *key,
-		baud:   *baud,
-		ipPort: *ipPort,
+		mtls:           *mtls,
+		caCert:         *caCert,
+		cert:           *cert,
+		key:            *key,
+		baud:           *baud,
+		ipPort:         *ipPort,
+		ttyReadTimeout: *ttyReadTimeout,
 	}
 
 	ttyName, err := getTTY(*vid, *pid)
