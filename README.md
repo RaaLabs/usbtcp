@@ -68,27 +68,6 @@ or with mTLS
     the directory path of where to store the port.info file (default "./")
 ```
 
-#### Flags
-
-```text
-  -baud int
-    baud rate (default 9600)
-  -caCert string
-    the path to the ca certificate. There is a helper script 'gencert.sh' who will generate self signed certificates if you don't have other certificates to use (default "../certs/ca-cert.pem")
-  -cert string
-    the path to the server certificate (default "../certs/server-cert.pem")
-  -ipPort string
-    ip:port for where to start the network listener (default "127.0.0.1:45000")
-  -key string
-    the path to the private key (default "../certs/server-key.pem")
-  -mtls
-    set to true to enable, and also set caCert and cert flags
-  -pid string
-    usb PID
-  -vid string
-    usb VID
-```
-
 ### Client
 
 All available flags can be found starting the client with the `-help` flag.
