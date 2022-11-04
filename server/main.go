@@ -21,8 +21,9 @@ type netConfig struct {
 	cert   string
 	key    string
 
-	baud   int
-	ipPort string
+	baud           int
+	ipPort         string
+	ttyReadTimeout int
 }
 
 // getTTY will get the path of the tty.
@@ -75,7 +76,7 @@ func relay(ttyName string, nConf netConfig) error {
 
 			for {
 
-				err := tty.SetReadTimeout(time.Second * 1)
+				err := tty.SetReadTimeout(time.Second * time.Duration(nConf.ttyReadTimeout))
 				if err != nil {
 					return fmt.Errorf("error: setReadTimeoutFailed: %v", err)
 				}
@@ -96,17 +97,15 @@ func relay(ttyName string, nConf netConfig) error {
 					defer fmt.Printf(" ** ending go routine for Read tty -> write net.Conn\n")
 
 					for {
-						fmt.Println(" *** DEBUG tty->conn 1")
 
 						b := make([]byte, 1)
 						n, err := tty.Read(b)
 						if err != nil {
-							fmt.Println(" *** DEBUG tty->conn 1.1")
 							if connOK {
 								fmt.Printf("connOK = %v\n", connOK)
 								continue
 							}
-							fmt.Println(" *** DEBUG tty->conn 1.2")
+
 							er := fmt.Errorf("error: tty.Read failed: %v", err)
 							select {
 							case errCh <- er:
@@ -114,20 +113,16 @@ func relay(ttyName string, nConf netConfig) error {
 								fmt.Printf("%v\n", er)
 							}
 
-							fmt.Println(" *** DEBUG tty->conn 1.3")
 							return
 						}
 
 						fmt.Printf(" tty read nr = %v\n", n)
-
-						fmt.Println(" *** DEBUG tty->conn 2")
 
 						_, err = conn.Write(b)
 						if err != nil {
 							errCh <- fmt.Errorf("error: conn.Write failed: %v", err)
 							return
 						}
-						fmt.Println(" *** DEBUG tty->conn 3")
 					}
 				}()
 
@@ -140,21 +135,16 @@ func relay(ttyName string, nConf netConfig) error {
 					for {
 						b := make([]byte, 1)
 
-						fmt.Println(" *** DEBUG conn->tty 1")
 						_, err := conn.Read(b)
 						if err != nil && err != io.EOF {
-							fmt.Println(" *** DEBUG conn->tty 1.1")
 							errCh <- fmt.Errorf("error: conn.Read failed : %v", err)
 							return
 						}
 						if err == io.EOF {
-							fmt.Println(" *** DEBUG conn->tty 1.2")
-
 							errCh <- fmt.Errorf("error: conn.Read failed, got io.EOF: %v", err)
 							return
 						}
 
-						fmt.Println(" *** DEBUG conn->tty 2")
 						_, err = tty.Write(b)
 						if err != nil {
 							er := fmt.Errorf("error: tty.Write failed : %v", err)
@@ -242,16 +232,18 @@ func main() {
 	key := flag.String("key", "../certs/server-key.pem", "the path to the private key")
 	baud := flag.Int("baud", 9600, "baud rate")
 	ipPort := flag.String("ipPort", "127.0.0.1:45000", "ip:port for where to start the network listener")
+	ttyReadTimeout := flag.Int("ttyReadTimeout", 1, "The timeout for TTY read given in seconds")
 
 	flag.Parse()
 
 	nConf := netConfig{
-		mtls:   *mtls,
-		caCert: *caCert,
-		cert:   *cert,
-		key:    *key,
-		baud:   *baud,
-		ipPort: *ipPort,
+		mtls:           *mtls,
+		caCert:         *caCert,
+		cert:           *cert,
+		key:            *key,
+		baud:           *baud,
+		ipPort:         *ipPort,
+		ttyReadTimeout: *ttyReadTimeout,
 	}
 
 	ttyName, err := getTTY(*vid, *pid)
